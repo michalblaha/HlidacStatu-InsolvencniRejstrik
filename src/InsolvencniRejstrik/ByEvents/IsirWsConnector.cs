@@ -11,6 +11,7 @@ namespace InsolvencniRejstrik.ByEvents
 	partial class IsirWsConnector : BaseConnector
 	{
 		private readonly IRepository Repository;
+		private readonly EventsRepository EventsRepository;
 		private readonly IIsirClient IsirClient;
 		private readonly IWsClient WsClient;
 
@@ -19,6 +20,7 @@ namespace InsolvencniRejstrik.ByEvents
 		{
 			GlobalStats = new Stats();
 			Repository = new RepositoryCache(new Repository(GlobalStats), GlobalStats);
+			EventsRepository = new EventsRepository();
 			IsirClient = noCache ? (IIsirClient)new IsirClient(GlobalStats) : new IsirClientCache(new IsirClient(GlobalStats), GlobalStats);
 			WsClient = noCache ? (IWsClient)new WsClient() : new WsClientCache(new Lazy<IWsClient>(() => new WsClient()));
 		}
@@ -27,7 +29,7 @@ namespace InsolvencniRejstrik.ByEvents
 		{
 			Console.WriteLine("Spousti se zpracovani ...");
 
-			WsProcessorTask = RunTask(() => WsProcessor(Repository.GetLastEventId()));
+			WsProcessorTask = RunTask(() => WsProcessor(EventsRepository.GetLastEventId()));
 			LinkProcessorTask = RunTask(LinkProcessor);
 			MessageProcessorTask = RunTask(MessageProcessor);
 			var StatsInfo = RunTask(StatsInfoCallback);
@@ -59,7 +61,7 @@ namespace InsolvencniRejstrik.ByEvents
 
 						while (WsResultsQueue.Count > 3000)
 						{
-							Thread.Sleep(1000);
+							Thread.Sleep(10_000);
 						}
 					}
 
@@ -104,7 +106,7 @@ namespace InsolvencniRejstrik.ByEvents
 
 					if (!string.IsNullOrEmpty(item.DokumentUrl))
 					{
-						Repository.SetDocument(new Dokument { Id = item.Id.ToString(), Url = item.DokumentUrl, DatumVlozeni = item.DatumZalozeniUdalosti, Popis = item.PopisUdalosti });
+						Repository.SetDocument(new Dokument { Id = item.Id.ToString(), SpisovaZnacka = item.SpisovaZnacka, Url = item.DokumentUrl, DatumVlozeni = item.DatumZalozeniUdalosti, Popis = item.PopisUdalosti });
 						GlobalStats.DocumentCount++;
 					}
 
@@ -135,6 +137,7 @@ namespace InsolvencniRejstrik.ByEvents
 
 						Repository.SetInsolvencyProceeding(rizeni);
 					}
+					EventsRepository.SetLastEventId(item.Id);
 				}
 				else
 				{
@@ -161,6 +164,10 @@ namespace InsolvencniRejstrik.ByEvents
 				var key = $"{idPuvodce}-{osobaId}";
 				var osoba = Repository.GetPerson(osobaId, idPuvodce) ?? CreateNewPerson(osobaId, idPuvodce);
 
+				if (!string.IsNullOrEmpty(osoba.SpisovaZnacka) && rizeni.SpisovaZnacka != osoba.SpisovaZnacka) {
+					throw new ArgumentException("Rozdilna spisova znacka pro stejnou osobu => kombinace IdPuvodce a OsobaId neni dostatecne");
+				}
+				osoba.SpisovaZnacka = rizeni.SpisovaZnacka;
 				osoba.Typ = ParseValue(xdoc, "//osoba/druhOsoby");
 				osoba.Role = ParseValue(xdoc, "//osoba/druhRoleVRizeni");
 				osoba.Nazev = ParseName(xdoc);
@@ -216,7 +223,11 @@ namespace InsolvencniRejstrik.ByEvents
 			while (true)
 			{
 				PrintHeader();
-				Console.WriteLine($"   Zpracovano udalosti: {GlobalStats.EventsCount}");
+				var speed = GlobalStats.EventsCount / GlobalStats.Duration().TotalSeconds;
+				var remains = speed > 0 && GlobalStats.LastEventId < 39_000_000
+					? $" => {TimeSpan.FromSeconds((39_000_000 - GlobalStats.EventsCount) / speed)}"
+					: string.Empty;
+				Console.WriteLine($"   Zpracovano udalosti: {GlobalStats.EventsCount} ({speed:0.00} udalost/s{remains})");
 				Console.WriteLine($"   Doba behu: {GlobalStats.RunningTime()}");
 				Console.WriteLine();
 				Console.WriteLine($"   Nacteno rizeni: {GlobalStats.RizeniCount}");

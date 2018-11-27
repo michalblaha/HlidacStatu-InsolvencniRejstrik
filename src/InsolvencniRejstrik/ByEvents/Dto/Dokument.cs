@@ -1,12 +1,15 @@
 ﻿using System;
 using Nest;
+
 namespace InsolvencniRejstrik.ByEvents
 {
 	class Dokument
 	{
         [Nest.Keyword]
 		public string Id { get; set; }
-        [Nest.Date]
+		[Nest.Keyword]
+		public string SpisovaZnacka { get; set; }
+		[Nest.Date]
         public DateTime DatumVlozeni { get; set; }
         [Nest.Text]
         public string Popis { get; set; }
@@ -24,6 +27,7 @@ namespace InsolvencniRejstrik.ByEvents
 		protected bool Equals(Dokument other)
 		{
 			return Equals(Id, other.Id)
+				&& Equals(SpisovaZnacka, other.SpisovaZnacka)
 				&& Equals(DatumVlozeni, other.DatumVlozeni)
 				&& Equals(Popis, other.Popis)
 				&& Equals(Url, other.Url)
@@ -52,6 +56,7 @@ namespace InsolvencniRejstrik.ByEvents
 			unchecked
 			{
 				var result = Id?.GetHashCode() ?? 0;
+				result = (result * 397) ^ SpisovaZnacka.GetHashCode();
 				result = (result * 397) ^ DatumVlozeni.GetHashCode();
 				result = (result * 397) ^ (Popis?.GetHashCode() ?? 0);
 				result = (result * 397) ^ (Url?.GetHashCode() ?? 0);
